@@ -24,6 +24,10 @@ export interface Mother extends User {
   assignedCHW: string;
   riskLevel: RiskLevel;
   gardenPetals: number;
+  lastCheckInDate?: string;
+  currentCheckInStreak?: number;
+  longestCheckInStreak?: number;
+  lastPetalAwardedAt?: string;
   badges: Badge[];
 }
 

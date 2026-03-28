@@ -11,6 +11,11 @@
       "static/chunks/main-app.js",
       "static/chunks/app/page.js"
     ],
+    "/(auth)/login/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(auth)/login/page.js"
+    ],
     "/api/session/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -21,15 +26,20 @@
       "static/chunks/main-app.js",
       "static/chunks/app/(mother)/dashboard/page.js"
     ],
-    "/(auth)/login/page": [
+    "/(mother)/checkin/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(auth)/login/page.js"
+      "static/chunks/app/(mother)/checkin/page.js"
     ],
-    "/(chw)/triage/page": [
+    "/(mother)/companion/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/(chw)/triage/page.js"
+      "static/chunks/app/(mother)/companion/page.js"
+    ],
+    "/(mother)/garden/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(mother)/garden/page.js"
     ]
   }
 }

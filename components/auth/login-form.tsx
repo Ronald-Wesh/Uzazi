@@ -24,6 +24,7 @@ import {
   signInWithIdentifier,
   verifyPhoneCode,
 } from "@/components/auth/auth-utils";
+import { AuthSessionGate } from "@/components/auth/auth-session-gate";
 import { AuthIntentDivider } from "@/components/auth/auth-widgets";
 import { GoogleIcon } from "@/components/auth/google-icon";
 import { LanguageToggle } from "@/components/auth/language-toggle";
@@ -31,6 +32,7 @@ import { LoadingBloom } from "@/components/auth/loading-bloom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 const LOGIN_PHONE_RECAPTCHA_ID = "login-phone-recaptcha";
@@ -74,6 +76,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 
 export function LoginForm({ returnTo }: { returnTo?: string }) {
   const router = useRouter();
+  const { loading: authLoading, user } = useAuth();
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [language, setLanguage] = useState("EN");
@@ -227,6 +230,18 @@ export function LoginForm({ returnTo }: { returnTo?: string }) {
       setIsGoogleLoading(false);
     }
   };
+
+  if (!authLoading && user) {
+    return (
+      <AuthSessionGate
+        title="You already have an active Uzazi session"
+        description="This browser is still signed in. Continue with the current account, or sign out first to enter different login details."
+        actionLabel="Continue to Dashboard"
+        stayOnPath="/login"
+        user={user}
+      />
+    );
+  }
 
   return (
     <div className="relative w-full max-w-xl">

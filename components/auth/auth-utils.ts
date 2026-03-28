@@ -23,6 +23,9 @@ export const PHONE_REGEX = /^\+[1-9]\d{8,14}$/;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PHONE_ALIAS_DOMAIN = "phone.uzazi.app";
 export const PENDING_REGISTRATION_STORAGE_KEY = "uzazi-pending-registration";
+export const GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY =
+  "uzazi-google-registration-redirect-intent";
+const GOOGLE_REGISTRATION_REDIRECT_INTENT_TTL_MS = 15 * 60 * 1000;
 export const KENYA_COUNTIES = [
   "Baringo",
   "Bomet",
@@ -584,4 +587,51 @@ export function hasPendingRegistrationDraft() {
   }
 
   return Boolean(localStorage.getItem(PENDING_REGISTRATION_STORAGE_KEY));
+}
+
+export function storeGoogleRegistrationRedirectIntent() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  sessionStorage.setItem(
+    GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY,
+    Date.now().toString(),
+  );
+}
+
+export function clearGoogleRegistrationRedirectIntent() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  sessionStorage.removeItem(GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY);
+}
+
+export function hasPendingGoogleRegistrationRedirectIntent() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const rawValue = sessionStorage.getItem(
+    GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY,
+  );
+
+  if (!rawValue) {
+    return false;
+  }
+
+  const timestamp = Number(rawValue);
+
+  if (!Number.isFinite(timestamp)) {
+    sessionStorage.removeItem(GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY);
+    return false;
+  }
+
+  if (Date.now() - timestamp > GOOGLE_REGISTRATION_REDIRECT_INTENT_TTL_MS) {
+    sessionStorage.removeItem(GOOGLE_REGISTRATION_REDIRECT_INTENT_STORAGE_KEY);
+    return false;
+  }
+
+  return true;
 }

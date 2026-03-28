@@ -16,10 +16,12 @@ import {
   PREFERRED_LANGUAGES,
   PHONE_REGEX,
   calculatePostpartumDay,
+  clearGoogleRegistrationRedirectIntent,
   clearPendingRegistrationDraft,
   ensureLocalAuthPersistence,
   getStoredLocale,
   getWarmFirebaseMessage,
+  hasPendingGoogleRegistrationRedirectIntent,
   localeToLanguage,
   normalizePhoneNumber,
   readPendingRegistrationDraft,
@@ -28,10 +30,12 @@ import {
   resolvePasswordStrength,
   sendPhoneVerificationCode,
   signInWithGoogleFlow,
+  storeGoogleRegistrationRedirectIntent,
   storePendingRegistrationDraft,
   syncSession,
   verifyPhoneCode,
 } from "@/components/auth/auth-utils";
+import { AuthSessionGate } from "@/components/auth/auth-session-gate";
 import { GoogleIcon } from "@/components/auth/google-icon";
 import { LoadingBloom } from "@/components/auth/loading-bloom";
 import { Button } from "@/components/ui/button";
@@ -39,6 +43,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { auth, db } from "@/lib/firebase";
 import { getDefaultRouteForRole } from "@/lib/auth";
+import { useAuth } from "@/providers/AuthProvider";
 import { useToast } from "@/providers/ToastProvider";
 
 const REGISTER_PHONE_RECAPTCHA_ID = "register-phone-recaptcha";
@@ -283,6 +288,7 @@ function buildRegistrationProfile(values: RegisterValues, firebaseUser: Firebase
 
 export function RegisterForm() {
   const router = useRouter();
+  const { loading: authLoading, user } = useAuth();
   const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [showPassword, setShowPassword] = useState(false);
@@ -291,6 +297,8 @@ export function RegisterForm() {
   const [phoneCode, setPhoneCode] = useState("");
   const [isPhoneLoading, setIsPhoneLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [waitingForGoogleRegistrationResume, setWaitingForGoogleRegistrationResume] =
+    useState(false);
   const fieldRing =
     "focus-visible:ring-2 focus-visible:ring-uzazi-blush focus-visible:ring-offset-2 focus-visible:ring-offset-uzazi-cream";
 
@@ -334,6 +342,10 @@ export function RegisterForm() {
   }, [setValue]);
 
   useEffect(() => {
+    setWaitingForGoogleRegistrationResume(hasPendingGoogleRegistrationRedirectIntent());
+  }, []);
+
+  useEffect(() => {
     return () => {
       resetPhoneVerification();
     };
@@ -347,6 +359,15 @@ export function RegisterForm() {
   const postpartumDay = useMemo(() => calculatePostpartumDay(babyDateOfBirth ?? ""), [babyDateOfBirth]);
   const passwordStrength = resolvePasswordStrength(password ?? "");
 
+  const resetRegistrationState = () => {
+    clearGoogleRegistrationRedirectIntent();
+    clearPendingRegistrationDraft();
+    resetPhoneVerification();
+    setPhoneChallenge(null);
+    setPhoneCode("");
+    setWaitingForGoogleRegistrationResume(false);
+  };
+
   const completeRegistration = async (firebaseUser: FirebaseUser, values: RegisterValues) => {
     const existingProfile = await readUserProfile(firebaseUser.uid);
     const onboardingComplete =
@@ -356,10 +377,7 @@ export function RegisterForm() {
 
     if (onboardingComplete && existingProfile) {
       await syncSession(firebaseUser, existingProfile.role);
-      clearPendingRegistrationDraft();
-      resetPhoneVerification();
-      setPhoneChallenge(null);
-      setPhoneCode("");
+      resetRegistrationState();
       toast({
         title: "This account already exists",
         description: "We found your profile and signed you in instead of creating a duplicate account.",
@@ -372,17 +390,24 @@ export function RegisterForm() {
     const profile = buildRegistrationProfile(values, firebaseUser);
     await setDoc(doc(db, "users", firebaseUser.uid), profile, { merge: true });
     await syncSession(firebaseUser, values.role);
-    clearPendingRegistrationDraft();
-    resetPhoneVerification();
-    setPhoneChallenge(null);
-    setPhoneCode("");
+    resetRegistrationState();
     router.replace(getDefaultRouteForRole(values.role));
   };
 
   useEffect(() => {
     const pendingDraft = readPendingRegistrationDraft<RegisterValues>();
+    const shouldResumeGoogleRegistration = hasPendingGoogleRegistrationRedirectIntent();
 
     if (!pendingDraft || pendingDraft.authMethod !== "google") {
+      setWaitingForGoogleRegistrationResume(false);
+      clearGoogleRegistrationRedirectIntent();
+      return;
+    }
+
+    setWaitingForGoogleRegistrationResume(shouldResumeGoogleRegistration);
+
+    if (!shouldResumeGoogleRegistration) {
+      clearPendingRegistrationDraft();
       return;
     }
 
@@ -401,7 +426,7 @@ export function RegisterForm() {
         try {
           await completeRegistration(firebaseUser, pendingDraft);
         } catch (error) {
-          clearPendingRegistrationDraft();
+          resetRegistrationState();
           const message = getWarmFirebaseMessage(error, "register");
           toast({ ...message, variant: "destructive" });
         } finally {
@@ -499,6 +524,8 @@ export function RegisterForm() {
 
       setIsGoogleLoading(true);
       storePendingRegistrationDraft(values);
+      storeGoogleRegistrationRedirectIntent();
+      setWaitingForGoogleRegistrationResume(true);
 
       try {
         const result = await signInWithGoogleFlow({
@@ -511,7 +538,7 @@ export function RegisterForm() {
 
         await completeRegistration(result.credential.user, values);
       } catch (error) {
-        clearPendingRegistrationDraft();
+        resetRegistrationState();
         throw error;
       } finally {
         setIsGoogleLoading(false);
@@ -532,6 +559,18 @@ export function RegisterForm() {
           ? "Verify and Continue"
           : "Send Verification Code"
         : "Continue with Google";
+
+  if (!authLoading && user && !waitingForGoogleRegistrationResume) {
+    return (
+      <AuthSessionGate
+        title="An Uzazi account is already active here"
+        description="Registration can only continue after signing out of the current account. Keep the current session, or switch accounts and return to this form."
+        actionLabel="Continue to Dashboard"
+        stayOnPath="/register"
+        user={user}
+      />
+    );
+  }
 
   return (
     <div className="relative w-full max-w-3xl">

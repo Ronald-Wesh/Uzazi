@@ -19,9 +19,11 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 
 import {
+  clearGoogleRegistrationRedirectIntent,
   clearPendingRegistrationDraft,
   ensureLocalAuthPersistence,
   finishGoogleRedirectFlow,
+  hasPendingGoogleRegistrationRedirectIntent,
   hasPendingRegistrationDraft,
   hydrateAuthenticatedUser,
   resolveDestination,
@@ -42,7 +44,8 @@ interface AuthContextValue {
   loading: boolean;
   role: UserRole | null;
   signIn: (email: string, password: string, returnTo?: string) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (redirectTo?: string) => Promise<void>;
+  updateUser: (nextUser: AppUser | null | ((currentUser: AppUser | null) => AppUser | null)) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -77,6 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { toast } = useToast();
 
+  const isWaitingForRegistrationCompletion = () =>
+    pathname === "/register" &&
+    hasPendingRegistrationDraft() &&
+    hasPendingGoogleRegistrationRedirectIntent();
+
   useEffect(() => {
     roleRef.current = role;
   }, [role]);
@@ -95,18 +103,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     const initialize = async () => {
+      const waitingForRegistrationCompletion = isWaitingForRegistrationCompletion();
+
       try {
         await ensureLocalAuthPersistence();
         const redirectResult = await finishGoogleRedirectFlow();
 
-        if (redirectResult && active) {
-          const waitingForRegistrationCompletion =
-            pathname === "/register" && hasPendingRegistrationDraft();
-
-          if (waitingForRegistrationCompletion) {
-            return;
-          }
-
+        if (redirectResult && active && !waitingForRegistrationCompletion) {
           startTransition(() => {
             router.replace(resolveDestination(redirectResult.profile.role));
           });
@@ -146,6 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setRole(null);
           setLoading(false);
+          clearGoogleRegistrationRedirectIntent();
           clearPendingRegistrationDraft();
           notifyProfileLoadError(error);
         }
@@ -209,11 +213,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const waitingForRegistrationCompletion = isWaitingForRegistrationCompletion();
     const requiredRole = getRequiredRole(pathname);
     const defaultRoute = getDefaultRouteForRole(user.role);
-    const isEntryRoute = pathname === "/" || pathname === "/login" || pathname === "/register";
+    const isHomePage = pathname === "/";
+    const isAuthPage = pathname === "/login" || pathname === "/register";
 
-    if (isEntryRoute) {
+    if (isAuthPage) {
+      if (waitingForRegistrationCompletion) {
+        return;
+      }
+
+      return;
+    }
+
+    if (isHomePage) {
       startTransition(() => {
         router.replace(defaultRoute);
       });
@@ -249,15 +263,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.replace(destination);
         });
       },
-      async signOut() {
+      async signOut(redirectTo = "/login") {
         await fetch("/api/session", { method: "DELETE" });
         await firebaseSignOut(auth);
         setUser(null);
         setRole(null);
+        clearGoogleRegistrationRedirectIntent();
+        clearPendingRegistrationDraft();
 
         startTransition(() => {
-          router.replace("/login");
+          router.replace(redirectTo);
         });
+      },
+      updateUser(nextUser) {
+        setUser((currentUser) =>
+          typeof nextUser === "function"
+            ? (nextUser as (currentUser: AppUser | null) => AppUser | null)(currentUser)
+            : nextUser,
+        );
       },
     }),
     [loading, role, router, user],
