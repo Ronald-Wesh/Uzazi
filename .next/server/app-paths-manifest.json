@@ -1,6 +1,6 @@
 {
-  "/icon.svg/route": "app/icon.svg/route.js",
   "/api/session/route": "app/api/session/route.js",
-  "/(auth)/login/page": "app/(auth)/login/page.js",
-  "/(mother)/dashboard/page": "app/(mother)/dashboard/page.js"
+  "/(mother)/dashboard/page": "app/(mother)/dashboard/page.js",
+  "/(chw)/triage/page": "app/(chw)/triage/page.js",
+  "/(auth)/login/page": "app/(auth)/login/page.js"
 }
