@@ -1,26 +1,32 @@
 "use client";
 
+import type { FirebaseError } from "firebase/app";
 import {
   createContext,
   startTransition,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   onAuthStateChanged,
   onIdTokenChanged,
-  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
+  type User as FirebaseUser,
 } from "firebase/auth";
 import { usePathname, useRouter } from "next/navigation";
 
 import {
+  clearPendingRegistrationDraft,
   ensureLocalAuthPersistence,
-  ensureUserProfile,
   finishGoogleRedirectFlow,
+  hasPendingRegistrationDraft,
   hydrateAuthenticatedUser,
+  resolveDestination,
+  signInWithIdentifier,
+  syncSession,
 } from "@/components/auth/auth-utils";
 import {
   getDefaultRouteForRole,
@@ -29,6 +35,7 @@ import {
 } from "@/lib/auth";
 import { auth } from "@/lib/firebase";
 import type { AppUser, UserRole } from "@/lib/types";
+import { useToast } from "@/providers/ToastProvider";
 
 interface AuthContextValue {
   user: AppUser | null;
@@ -40,27 +47,75 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function getProfileLoadErrorMessage(error: unknown) {
+  const firebaseError = error as FirebaseError | undefined;
+
+  if (
+    firebaseError?.code === "unavailable" ||
+    firebaseError?.message?.toLowerCase().includes("client is offline")
+  ) {
+    return {
+      title: "We couldn’t reach your care profile",
+      description:
+        "A browser extension, privacy setting, or network issue is blocking Firebase. Disable the blocker for this site, then try again.",
+    };
+  }
+
+  return {
+    title: "We couldn’t load your care profile",
+    description: "Please try again in a moment. If this keeps happening, check your browser privacy settings for this site.",
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState<UserRole | null>(null);
+  const syncIssueShownRef = useRef(false);
+  const roleRef = useRef<UserRole | null>(null);
   const pathname = usePathname();
   const router = useRouter();
+  const { toast } = useToast();
+
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
 
   useEffect(() => {
     let active = true;
     let authUnsubscribe: () => void = () => {};
     let tokenUnsubscribe: () => void = () => {};
+    const notifyProfileLoadError = (error: unknown) => {
+      if (syncIssueShownRef.current) {
+        return;
+      }
+
+      syncIssueShownRef.current = true;
+      toast({ ...getProfileLoadErrorMessage(error), variant: "destructive" });
+    };
 
     const initialize = async () => {
       try {
         await ensureLocalAuthPersistence();
-        await finishGoogleRedirectFlow();
+        const redirectResult = await finishGoogleRedirectFlow();
+
+        if (redirectResult && active) {
+          const waitingForRegistrationCompletion =
+            pathname === "/register" && hasPendingRegistrationDraft();
+
+          if (waitingForRegistrationCompletion) {
+            return;
+          }
+
+          startTransition(() => {
+            router.replace(resolveDestination(redirectResult.profile.role));
+          });
+        }
       } catch {
         // Auth state listeners below still handle the active session path.
       }
 
-      authUnsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      const handleAuthStateChanged = async (firebaseUser: FirebaseUser | null) => {
         if (!active) {
           return;
         }
@@ -72,29 +127,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        const profile = await ensureUserProfile(firebaseUser);
+        try {
+          const profile = await hydrateAuthenticatedUser(firebaseUser);
 
-        if (!active) {
+          if (!active) {
+            return;
+          }
+
+          syncIssueShownRef.current = false;
+          setUser(profile);
+          setRole(profile.role);
+          setLoading(false);
+        } catch (error) {
+          if (!active) {
+            return;
+          }
+
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+          clearPendingRegistrationDraft();
+          notifyProfileLoadError(error);
+        }
+      };
+
+      const handleTokenChanged = async (firebaseUser: FirebaseUser | null) => {
+        const currentRole = roleRef.current;
+
+        if (!firebaseUser || !currentRole) {
           return;
         }
 
-        setUser(profile);
-        setRole(profile.role);
-        setLoading(false);
+        try {
+          await syncSession(firebaseUser, currentRole);
+
+          if (!active) {
+            return;
+          }
+
+          syncIssueShownRef.current = false;
+        } catch (error) {
+          if (!active) {
+            return;
+          }
+
+          notifyProfileLoadError(error);
+        }
+      };
+
+      authUnsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+        void handleAuthStateChanged(firebaseUser);
       });
 
-      tokenUnsubscribe = onIdTokenChanged(auth, async (firebaseUser) => {
-        if (!firebaseUser) {
-          return;
-        }
-
-        const profile = await hydrateAuthenticatedUser(firebaseUser);
-
-        if (!active) {
-          return;
-        }
-
-        setRole(profile.role);
+      tokenUnsubscribe = onIdTokenChanged(auth, (firebaseUser) => {
+        void handleTokenChanged(firebaseUser);
       });
     };
 
@@ -105,7 +191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       authUnsubscribe();
       tokenUnsubscribe();
     };
-  }, []);
+  }, [pathname, router, toast]);
 
   useEffect(() => {
     if (loading) {
@@ -148,9 +234,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       role,
       async signIn(email, password, returnTo) {
-        await ensureLocalAuthPersistence();
-        const credential = await signInWithEmailAndPassword(auth, email, password);
-        const profile = await hydrateAuthenticatedUser(credential.user);
+        const { profile } = await signInWithIdentifier(email, password);
 
         setUser(profile);
         setRole(profile.role);

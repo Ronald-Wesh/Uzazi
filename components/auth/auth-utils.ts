@@ -1,11 +1,14 @@
 import type { FirebaseError } from "firebase/app";
 import {
   browserLocalPersistence,
+  type ConfirmationResult,
   getRedirectResult,
   GoogleAuthProvider,
+  RecaptchaVerifier,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
+  signInWithPhoneNumber,
   signInWithPopup,
   signInWithRedirect,
   type User as FirebaseUser,
@@ -19,6 +22,7 @@ import type { AppUser, UserRole } from "@/lib/types";
 export const PHONE_REGEX = /^\+[1-9]\d{8,14}$/;
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const PHONE_ALIAS_DOMAIN = "phone.uzazi.app";
+export const PENDING_REGISTRATION_STORAGE_KEY = "uzazi-pending-registration";
 export const KENYA_COUNTIES = [
   "Baringo",
   "Bomet",
@@ -83,6 +87,19 @@ export const TESTIMONIAL_PILLS = [
 ];
 
 let persistencePromise: Promise<void> | null = null;
+const SESSION_SYNC_TIMEOUT_MS = 10_000;
+let recaptchaVerifier: RecaptchaVerifier | null = null;
+let recaptchaContainerId: string | null = null;
+
+export class SessionSyncError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = "SessionSyncError";
+    this.status = status;
+  }
+}
 
 export function normalizePhoneNumber(value: string) {
   return value.replace(/[^\d+]/g, "");
@@ -215,12 +232,53 @@ export function getWarmFirebaseMessage(error: unknown, mode: "login" | "register
         title: "Google sign-in was closed",
         description: "No problem. You can open it again whenever you’re ready.",
       };
+    case "auth/invalid-verification-code":
+      return {
+        title: "That verification code did not match",
+        description: "Check the SMS code and try again, or request a new code.",
+      };
+    case "auth/code-expired":
+      return {
+        title: "That verification code has expired",
+        description: "Request a fresh code and continue from there.",
+      };
+    case "auth/captcha-check-failed":
+    case "auth/missing-app-credential":
+    case "auth/invalid-app-credential":
+      return {
+        title: "Phone verification could not start",
+        description: "The browser could not complete the verification check. Refresh the page and try again.",
+      };
+    case "auth/quota-exceeded":
+      return {
+        title: "Too many SMS requests were sent",
+        description: "Firebase has temporarily limited phone verification attempts. Wait a little, then try again.",
+      };
     case "auth/too-many-requests":
       return {
         title: "Let’s pause for a moment",
         description: "There have been several attempts in a short time. Please wait a bit, then try again.",
       };
+    case "permission-denied":
+      return {
+        title: "Firebase is rejecting profile access",
+        description: "Check Firestore rules and make sure signed-in users can read and write their own profile document.",
+      };
+    case "unavailable":
+    case "deadline-exceeded":
+      return {
+        title: "Firebase is taking too long to respond",
+        description: "Check your network, browser privacy settings, and Firebase project availability, then try again.",
+      };
     default:
+      if (error instanceof SessionSyncError) {
+        return {
+          title: "Your sign-in completed, but the app session did not",
+          description:
+            "The browser could not finish syncing the login cookie. Check the /api/session route response and site cookie settings, then try again.",
+        };
+      }
+
       if (mode === "reset") {
         return {
           title: "We couldn’t send the reset link",
@@ -262,15 +320,109 @@ export async function ensureLocalAuthPersistence() {
 }
 
 export async function syncSession(firebaseUser: FirebaseUser, role: UserRole) {
-  const token = await firebaseUser.getIdToken(true);
+  const token = await firebaseUser.getIdToken();
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), SESSION_SYNC_TIMEOUT_MS);
 
-  await fetch("/api/session", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ token, role }),
-  });
+  try {
+    const response = await fetch("/api/session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ token, role }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new SessionSyncError("Session sync request failed.", response.status);
+    }
+  } catch (error) {
+    if ((error as Error).name === "AbortError") {
+      throw new SessionSyncError("Session sync timed out.");
+    }
+
+    if (error instanceof SessionSyncError) {
+      throw error;
+    }
+
+    throw new SessionSyncError("Session sync could not reach the server.");
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function clearRecaptchaContainer(containerId: string | null) {
+  if (typeof window === "undefined" || !containerId) {
+    return;
+  }
+
+  const container = document.getElementById(containerId);
+
+  if (container) {
+    container.innerHTML = "";
+  }
+}
+
+export function resetPhoneVerification() {
+  if (recaptchaVerifier) {
+    recaptchaVerifier.clear();
+  }
+
+  clearRecaptchaContainer(recaptchaContainerId);
+  recaptchaVerifier = null;
+  recaptchaContainerId = null;
+}
+
+async function getPhoneRecaptchaVerifier(containerId: string) {
+  if (typeof window === "undefined") {
+    throw new Error("phone-auth-browser-only");
+  }
+
+  const container = document.getElementById(containerId);
+
+  if (!container) {
+    throw new Error("phone-auth-container-missing");
+  }
+
+  if (recaptchaVerifier && recaptchaContainerId !== containerId) {
+    resetPhoneVerification();
+  }
+
+  if (!recaptchaVerifier) {
+    clearRecaptchaContainer(containerId);
+    recaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
+      size: "invisible",
+    });
+    recaptchaContainerId = containerId;
+    await recaptchaVerifier.render();
+  }
+
+  return recaptchaVerifier;
+}
+
+export async function sendPhoneVerificationCode(phoneNumber: string, containerId: string) {
+  await ensureLocalAuthPersistence();
+  const verifier = await getPhoneRecaptchaVerifier(containerId);
+
+  try {
+    return await signInWithPhoneNumber(auth, normalizePhoneNumber(phoneNumber), verifier);
+  } catch (error) {
+    resetPhoneVerification();
+    throw error;
+  }
+}
+
+export async function verifyPhoneCode(
+  confirmationResult: ConfirmationResult,
+  verificationCode: string,
+  options?: {
+    language?: string;
+  },
+) {
+  const credential = await confirmationResult.confirm(verificationCode.trim());
+  const profile = await hydrateAuthenticatedUser(credential.user, options);
+  return { credential, profile };
 }
 
 export async function readUserProfile(uid: string) {
@@ -389,4 +541,47 @@ export async function sendResetLink(identifier: string) {
   }
 
   await sendPasswordResetEmail(auth, identifier.trim().toLowerCase());
+}
+
+export function storePendingRegistrationDraft(payload: unknown) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.setItem(PENDING_REGISTRATION_STORAGE_KEY, JSON.stringify(payload));
+}
+
+export function readPendingRegistrationDraft<T>() {
+  if (typeof window === "undefined") {
+    return null as T | null;
+  }
+
+  const rawValue = localStorage.getItem(PENDING_REGISTRATION_STORAGE_KEY);
+
+  if (!rawValue) {
+    return null as T | null;
+  }
+
+  try {
+    return JSON.parse(rawValue) as T;
+  } catch {
+    localStorage.removeItem(PENDING_REGISTRATION_STORAGE_KEY);
+    return null as T | null;
+  }
+}
+
+export function clearPendingRegistrationDraft() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(PENDING_REGISTRATION_STORAGE_KEY);
+}
+
+export function hasPendingRegistrationDraft() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return Boolean(localStorage.getItem(PENDING_REGISTRATION_STORAGE_KEY));
 }

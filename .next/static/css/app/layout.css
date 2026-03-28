@@ -879,6 +879,13 @@ video {
     position: relative;
     z-index: 1;
   }
+.\!container {
+  width: 100% !important;
+  margin-right: auto !important;
+  margin-left: auto !important;
+  padding-right: 1rem !important;
+  padding-left: 1rem !important;
+}
 .container {
   width: 100%;
   margin-right: auto;
@@ -887,6 +894,10 @@ video {
   padding-left: 1rem;
 }
 @media (min-width: 1280px) {
+
+  .\!container {
+    max-width: 1280px !important;
+  }
 
   .container {
     max-width: 1280px;
@@ -936,6 +947,9 @@ video {
 }
 .visible {
   visibility: visible;
+}
+.invisible {
+  visibility: hidden;
 }
 .fixed {
   position: fixed;
@@ -1426,6 +1440,9 @@ video {
   --tw-bg-opacity: 1;
   background-color: rgb(252 228 236 / var(--tw-bg-opacity, 1));
 }
+.bg-uzazi-petal\/55 {
+  background-color: rgb(252 228 236 / 0.55);
+}
 .bg-uzazi-petal\/60 {
   background-color: rgb(252 228 236 / 0.6);
 }
@@ -1524,6 +1541,9 @@ video {
 }
 .p-1 {
   padding: 0.25rem;
+}
+.p-2 {
+  padding: 0.5rem;
 }
 .p-3 {
   padding: 0.75rem;
@@ -1880,176 +1900,137 @@ video {
 .duration-500 {
   animation-duration: 500ms;
 }
-
 .file\:border-0::file-selector-button {
   border-width: 0px;
 }
-
 .file\:bg-transparent::file-selector-button {
   background-color: transparent;
 }
-
 .file\:text-sm::file-selector-button {
   font-size: 0.875rem;
   line-height: 1.25rem;
 }
-
 .file\:font-medium::file-selector-button {
   font-weight: 500;
 }
-
 .placeholder\:text-uzazi-earth\/40::-moz-placeholder {
   color: rgb(93 58 26 / 0.4);
 }
-
 .placeholder\:text-uzazi-earth\/40::placeholder {
   color: rgb(93 58 26 / 0.4);
 }
-
 .placeholder\:text-white\/45::-moz-placeholder {
   color: rgb(255 255 255 / 0.45);
 }
-
 .placeholder\:text-white\/45::placeholder {
   color: rgb(255 255 255 / 0.45);
 }
-
 .hover\:scale-\[1\.02\]:hover {
   --tw-scale-x: 1.02;
   --tw-scale-y: 1.02;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
-
 .hover\:border-uzazi-blush:hover {
   --tw-border-opacity: 1;
   border-color: rgb(244 167 185 / var(--tw-border-opacity, 1));
 }
-
 .hover\:border-uzazi-rose\/40:hover {
   border-color: rgb(139 34 82 / 0.4);
 }
-
 .hover\:bg-black\/5:hover {
   background-color: rgb(0 0 0 / 0.05);
 }
-
 .hover\:bg-uzazi-midnight\/90:hover {
   background-color: rgb(26 10 46 / 0.9);
 }
-
 .hover\:bg-uzazi-petal:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(252 228 236 / var(--tw-bg-opacity, 1));
 }
-
 .hover\:bg-uzazi-petal\/50:hover {
   background-color: rgb(252 228 236 / 0.5);
 }
-
 .hover\:bg-uzazi-petal\/70:hover {
   background-color: rgb(252 228 236 / 0.7);
 }
-
 .hover\:bg-uzazi-rose\/90:hover {
   background-color: rgb(139 34 82 / 0.9);
 }
-
 .hover\:bg-white:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
 }
-
 .hover\:bg-white\/20:hover {
   background-color: rgb(255 255 255 / 0.2);
 }
-
 .hover\:text-current:hover {
   color: currentColor;
 }
-
 .hover\:text-uzazi-earth:hover {
   --tw-text-opacity: 1;
   color: rgb(93 58 26 / var(--tw-text-opacity, 1));
 }
-
 .hover\:underline:hover {
   text-decoration-line: underline;
 }
-
 .hover\:shadow-bloom:hover {
   --tw-shadow: 0 24px 80px -32px rgba(139, 34, 82, 0.35);
   --tw-shadow-colored: 0 24px 80px -32px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
-
 .focus\:outline-none:focus {
   outline: 2px solid transparent;
   outline-offset: 2px;
 }
-
 .focus\:ring-2:focus {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
 }
-
 .focus\:ring-uzazi-blush:focus {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(244 167 185 / var(--tw-ring-opacity, 1));
 }
-
 .focus\:ring-offset-2:focus {
   --tw-ring-offset-width: 2px;
 }
-
 .focus\:ring-offset-uzazi-cream:focus {
   --tw-ring-offset-color: #FFF8F5;
 }
-
 .focus-visible\:outline-none:focus-visible {
   outline: 2px solid transparent;
   outline-offset: 2px;
 }
-
 .focus-visible\:ring-2:focus-visible {
   --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);
   --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);
   box-shadow: var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
 }
-
 .focus-visible\:ring-uzazi-blush:focus-visible {
   --tw-ring-opacity: 1;
   --tw-ring-color: rgb(244 167 185 / var(--tw-ring-opacity, 1));
 }
-
 .focus-visible\:ring-uzazi-rose\/30:focus-visible {
   --tw-ring-color: rgb(139 34 82 / 0.3);
 }
-
 .focus-visible\:ring-uzazi-rose\/40:focus-visible {
   --tw-ring-color: rgb(139 34 82 / 0.4);
 }
-
 .focus-visible\:ring-offset-2:focus-visible {
   --tw-ring-offset-width: 2px;
 }
-
 .focus-visible\:ring-offset-uzazi-cream:focus-visible {
   --tw-ring-offset-color: #FFF8F5;
 }
-
 .disabled\:pointer-events-none:disabled {
   pointer-events: none;
 }
-
 .disabled\:cursor-not-allowed:disabled {
   cursor: not-allowed;
 }
-
 .disabled\:opacity-50:disabled {
   opacity: 0.5;
 }
-
 @media (min-width: 640px) {
 
   .sm\:grid-cols-2 {
@@ -2076,7 +2057,6 @@ video {
     justify-content: space-between;
   }
 }
-
 @media (min-width: 768px) {
 
   .md\:col-span-2 {
@@ -2150,7 +2130,6 @@ video {
     line-height: 1;
   }
 }
-
 @media (min-width: 1024px) {
 
   .lg\:grid {
@@ -2195,7 +2174,6 @@ video {
     padding-bottom: 3.5rem;
   }
 }
-
 @media (min-width: 1280px) {
 
   .xl\:grid-cols-\[1\.05fr_0\.95fr\] {
