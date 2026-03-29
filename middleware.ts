@@ -6,7 +6,7 @@ import {
   ROLE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
 } from "@/lib/auth";
-import { verifyRoleToken, verifySessionCookie } from "@/lib/auth-server";
+import { authenticateSession as authenticateAppSession } from "@/lib/auth-server";
 
 function redirectToLogin(request: NextRequest) {
   const loginUrl = new URL("/login", request.url);
@@ -22,31 +22,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-  const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-
-  if (!projectId || !sessionCookie) {
-    return redirectToLogin(request);
-  }
-
-  const session = await verifySessionCookie(sessionCookie, projectId);
+  const session = await authenticateAppSession({
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    roleToken: request.cookies.get(ROLE_COOKIE_NAME)?.value,
+    sessionToken: request.cookies.get(SESSION_COOKIE_NAME)?.value,
+  });
 
   if (!session) {
     return redirectToLogin(request);
   }
 
-  const roleCookie = request.cookies.get(ROLE_COOKIE_NAME)?.value;
-  const role = roleCookie ? await verifyRoleToken(roleCookie) : null;
+  if (session.role !== requiredRole) {
+    const redirectUrl = new URL(getDefaultRouteForRole(session.role), request.url);
 
-  if (role !== requiredRole) {
-    const redirectUrl = new URL(role ? getDefaultRouteForRole(role) : "/login", request.url);
-
-    if (!role) {
-      redirectUrl.searchParams.set(
-        "returnTo",
-        `${request.nextUrl.pathname}${request.nextUrl.search}`,
-      );
-    }
+    redirectUrl.searchParams.set(
+      "returnTo",
+      `${request.nextUrl.pathname}${request.nextUrl.search}`,
+    );
 
     return NextResponse.redirect(redirectUrl);
   }

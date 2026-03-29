@@ -40,6 +40,11 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/(mother)/garden/page.js"
+    ],
+    "/(chw)/triage/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/(chw)/triage/page.js"
     ]
   }
 }

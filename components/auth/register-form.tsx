@@ -376,7 +376,7 @@ export function RegisterForm() {
         : false;
 
     if (onboardingComplete && existingProfile) {
-      await syncSession(firebaseUser, existingProfile.role);
+      await syncSession(firebaseUser);
       resetRegistrationState();
       toast({
         title: "This account already exists",
@@ -389,7 +389,7 @@ export function RegisterForm() {
     await updateProfile(firebaseUser, { displayName: values.fullName });
     const profile = buildRegistrationProfile(values, firebaseUser);
     await setDoc(doc(db, "users", firebaseUser.uid), profile, { merge: true });
-    await syncSession(firebaseUser, values.role);
+    await syncSession(firebaseUser);
     resetRegistrationState();
     router.replace(getDefaultRouteForRole(values.role));
   };
@@ -463,6 +463,7 @@ export function RegisterForm() {
   const onSubmit = handleSubmit(async (values) => {
     try {
       await ensureLocalAuthPersistence();
+      storePendingRegistrationDraft(values);
 
       if (values.authMethod === "email") {
         const accountEmail = values.email?.trim().toLowerCase();
@@ -513,6 +514,7 @@ export function RegisterForm() {
         try {
           const { credential } = await verifyPhoneCode(phoneChallenge, phoneCode, {
             language: values.preferredLanguage,
+            requireRegisteredProfile: false,
           });
           await completeRegistration(credential.user, values);
         } finally {
@@ -530,6 +532,7 @@ export function RegisterForm() {
       try {
         const result = await signInWithGoogleFlow({
           language: values.preferredLanguage,
+          requireRegisteredProfile: false,
         });
 
         if (result.redirected) {

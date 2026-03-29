@@ -23,7 +23,6 @@ import {
   clearPendingRegistrationDraft,
   ensureLocalAuthPersistence,
   finishGoogleRedirectFlow,
-  hasPendingGoogleRegistrationRedirectIntent,
   hasPendingRegistrationDraft,
   hydrateAuthenticatedUser,
   resolveDestination,
@@ -81,9 +80,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { toast } = useToast();
 
   const isWaitingForRegistrationCompletion = () =>
-    pathname === "/register" &&
-    hasPendingRegistrationDraft() &&
-    hasPendingGoogleRegistrationRedirectIntent();
+    pathname === "/register" && hasPendingRegistrationDraft();
 
   useEffect(() => {
     roleRef.current = role;
@@ -107,11 +104,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       try {
         await ensureLocalAuthPersistence();
-        const redirectResult = await finishGoogleRedirectFlow();
+        const redirectResult = await finishGoogleRedirectFlow({
+          requireRegisteredProfile: !waitingForRegistrationCompletion,
+        });
+        const redirectProfile = redirectResult?.profile;
 
-        if (redirectResult && active && !waitingForRegistrationCompletion) {
+        if (redirectProfile && active && !waitingForRegistrationCompletion) {
           startTransition(() => {
-            router.replace(resolveDestination(redirectResult.profile.role));
+            router.replace(resolveDestination(redirectProfile.role));
           });
         }
       } catch {
@@ -124,6 +124,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (!firebaseUser) {
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+          return;
+        }
+
+        if (waitingForRegistrationCompletion) {
           setUser(null);
           setRole(null);
           setLoading(false);
@@ -163,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         try {
-          await syncSession(firebaseUser, currentRole);
+          await syncSession(firebaseUser);
 
           if (!active) {
             return;

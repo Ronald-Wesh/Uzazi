@@ -7,13 +7,14 @@ import {
   RecaptchaVerifier,
   sendPasswordResetEmail,
   setPersistence,
+  signOut as firebaseSignOut,
   signInWithEmailAndPassword,
   signInWithPhoneNumber,
   signInWithPopup,
   signInWithRedirect,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 
 import { getDefaultRouteForRole, getRequiredRole } from "@/lib/auth";
 import { auth, db } from "@/lib/firebase";
@@ -101,6 +102,13 @@ export class SessionSyncError extends Error {
     super(message);
     this.name = "SessionSyncError";
     this.status = status;
+  }
+}
+
+export class RegistrationRequiredError extends Error {
+  constructor(message = "Only signed-up Uzazi accounts can sign in.") {
+    super(message);
+    this.name = "RegistrationRequiredError";
   }
 }
 
@@ -282,6 +290,14 @@ export function getWarmFirebaseMessage(error: unknown, mode: "login" | "register
         };
       }
 
+      if (error instanceof RegistrationRequiredError) {
+        return {
+          title: "This account has not finished Uzazi sign-up",
+          description:
+            "Only accounts with a completed Uzazi registration can sign in. Create the account from the register page first.",
+        };
+      }
+
       if (mode === "reset") {
         return {
           title: "We couldn’t send the reset link",
@@ -322,7 +338,29 @@ export async function ensureLocalAuthPersistence() {
   await persistencePromise;
 }
 
-export async function syncSession(firebaseUser: FirebaseUser, role: UserRole) {
+async function clearSessionCookie() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    await fetch("/api/session", { method: "DELETE" });
+  } catch {
+    // Best effort cleanup only.
+  }
+}
+
+async function signOutUnregisteredUser() {
+  await clearSessionCookie();
+
+  try {
+    await firebaseSignOut(auth);
+  } catch {
+    // Ignore local sign-out failures after an invalid profile check.
+  }
+}
+
+export async function syncSession(firebaseUser: FirebaseUser) {
   const token = await firebaseUser.getIdToken();
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), SESSION_SYNC_TIMEOUT_MS);
@@ -333,7 +371,7 @@ export async function syncSession(firebaseUser: FirebaseUser, role: UserRole) {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ token, role }),
+      body: JSON.stringify({ token }),
       signal: controller.signal,
     });
 
@@ -421,10 +459,14 @@ export async function verifyPhoneCode(
   verificationCode: string,
   options?: {
     language?: string;
+    requireRegisteredProfile?: boolean;
   },
 ) {
   const credential = await confirmationResult.confirm(verificationCode.trim());
-  const profile = await hydrateAuthenticatedUser(credential.user, options);
+  const profile =
+    options?.requireRegisteredProfile === false
+      ? null
+      : await hydrateAuthenticatedUser(credential.user);
   return { credential, profile };
 }
 
@@ -433,47 +475,22 @@ export async function readUserProfile(uid: string) {
   return snapshot.exists() ? (snapshot.data() as AppUser) : null;
 }
 
-export async function ensureUserProfile(
-  firebaseUser: FirebaseUser,
-  options?: {
-    language?: string;
-  },
-): Promise<AppUser> {
+async function requireUserProfile(firebaseUser: FirebaseUser) {
   const existing = await readUserProfile(firebaseUser.uid);
 
   if (existing) {
     return existing;
   }
 
-  const fallbackProfile = {
-    uid: firebaseUser.uid,
-    email: firebaseUser.email ?? "",
-    phone: "",
-    role: "mother" as const,
-    name: firebaseUser.displayName ?? "UZAZI Member",
-    language: options?.language ?? "English",
-    county: "Nairobi",
-    postpartumDay: 0,
-    assignedCHW: "unassigned",
-    riskLevel: "low" as const,
-    gardenPetals: 0,
-    badges: [],
-    onboardingComplete: false,
-    createdAt: new Date().toISOString(),
-  };
-
-  await setDoc(doc(db, "users", firebaseUser.uid), fallbackProfile, { merge: true });
-  return fallbackProfile;
+  await signOutUnregisteredUser();
+  throw new RegistrationRequiredError();
 }
 
 export async function hydrateAuthenticatedUser(
   firebaseUser: FirebaseUser,
-  options?: {
-    language?: string;
-  },
 ) {
-  const profile = await ensureUserProfile(firebaseUser, options);
-  await syncSession(firebaseUser, profile.role);
+  const profile = await requireUserProfile(firebaseUser);
+  await syncSession(firebaseUser);
   return profile;
 }
 
@@ -494,7 +511,10 @@ function shouldPreferRedirectFlow() {
   return /iphone|ipad|android|mobile/.test(userAgent);
 }
 
-export async function finishGoogleRedirectFlow(options?: { language?: string }) {
+export async function finishGoogleRedirectFlow(options?: {
+  language?: string;
+  requireRegisteredProfile?: boolean;
+}) {
   await ensureLocalAuthPersistence();
   const result = await getRedirectResult(auth);
 
@@ -502,11 +522,17 @@ export async function finishGoogleRedirectFlow(options?: { language?: string }) 
     return null;
   }
 
-  const profile = await hydrateAuthenticatedUser(result.user, options);
+  const profile =
+    options?.requireRegisteredProfile === false
+      ? null
+      : await hydrateAuthenticatedUser(result.user);
   return { credential: result, profile };
 }
 
-export async function signInWithGoogleFlow(options?: { language?: string }) {
+export async function signInWithGoogleFlow(options?: {
+  language?: string;
+  requireRegisteredProfile?: boolean;
+}) {
   await ensureLocalAuthPersistence();
   const provider = createGoogleProvider();
 
@@ -517,7 +543,10 @@ export async function signInWithGoogleFlow(options?: { language?: string }) {
 
   try {
     const result = await signInWithPopup(auth, provider);
-    const profile = await hydrateAuthenticatedUser(result.user, options);
+    const profile =
+      options?.requireRegisteredProfile === false
+        ? null
+        : await hydrateAuthenticatedUser(result.user);
     return { redirected: false as const, credential: result, profile };
   } catch (error) {
     const code = (error as FirebaseError | undefined)?.code;

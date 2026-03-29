@@ -1,5 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { ROLE_COOKIE_NAME, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { authenticateSession } from "@/lib/auth-server";
 import type { CompanionMessage } from "@/lib/types";
 
 interface CompanionRequest {
@@ -29,6 +32,21 @@ function buildReply(userMessage: string) {
 }
 
 export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const session = await authenticateSession({
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    roleToken: cookieStore.get(ROLE_COOKIE_NAME)?.value,
+    sessionToken: cookieStore.get(SESSION_COOKIE_NAME)?.value,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "You must be signed in to use the companion." }, { status: 401 });
+  }
+
+  if (session.role !== "mother") {
+    return NextResponse.json({ error: "Only mother accounts can use the companion." }, { status: 403 });
+  }
+
   const body = (await request.json()) as CompanionRequest;
   const latest = body.messages?.at(-1);
 

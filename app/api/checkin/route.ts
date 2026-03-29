@@ -1,5 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { ROLE_COOKIE_NAME, SESSION_COOKIE_NAME } from "@/lib/auth";
+import { authenticateSession } from "@/lib/auth-server";
 import type { CheckIn, CheckInResponse, RiskLevel } from "@/lib/types";
 
 interface CheckInRequest {
@@ -47,10 +50,32 @@ function buildSummary(level: RiskLevel, responses: CheckInResponse[]) {
 }
 
 export async function POST(request: Request) {
+  const cookieStore = await cookies();
+  const session = await authenticateSession({
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    roleToken: cookieStore.get(ROLE_COOKIE_NAME)?.value,
+    sessionToken: cookieStore.get(SESSION_COOKIE_NAME)?.value,
+  });
+
+  if (!session) {
+    return NextResponse.json({ error: "You must be signed in to submit a check-in." }, { status: 401 });
+  }
+
+  if (session.role !== "mother") {
+    return NextResponse.json({ error: "Only mother accounts can submit check-ins." }, { status: 403 });
+  }
+
   const body = (await request.json()) as CheckInRequest;
 
   if (!body.userId || !body.responses?.length) {
     return NextResponse.json({ error: "A userId and at least one response are required." }, { status: 400 });
+  }
+
+  if (body.userId !== session.uid) {
+    return NextResponse.json(
+      { error: "You can only submit a check-in for the signed-in account." },
+      { status: 403 },
+    );
   }
 
   const riskScore = computeRiskScore(body.responses);

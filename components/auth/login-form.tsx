@@ -176,6 +176,10 @@ export function LoginForm({ returnTo }: { returnTo?: string }) {
         language: localeToLanguage(language),
       });
 
+      if (!profile) {
+        throw new Error("missing-profile-after-phone-signin");
+      }
+
       setPhoneChallenge(null);
       setPhoneCode("");
       resetPhoneVerification();
@@ -220,6 +224,10 @@ export function LoginForm({ returnTo }: { returnTo?: string }) {
 
       if (result.redirected) {
         return;
+      }
+
+      if (!result.profile) {
+        throw new Error("missing-profile-after-google-signin");
       }
 
       router.replace(resolveDestination(result.profile.role, returnTo));
